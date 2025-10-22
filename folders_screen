@@ -1,0 +1,120 @@
+import 'package:flutter/material.dart';
+import '../models/folder_model.dart';
+import '../database/db_helper.dart';
+import 'cards_screen.dart';
+
+class FoldersScreen extends StatefulWidget {
+  const FoldersScreen({super.key});
+
+  @override
+  State<FoldersScreen> createState() => _FoldersScreenState();
+}
+
+class _FoldersScreenState extends State<FoldersScreen> {
+  late Future<List<Folder>> _foldersFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadFolders();
+  }
+
+  void _loadFolders() {
+    setState(() {
+      _foldersFuture = DatabaseHelper.instance.getFoldersWithCount();
+    });
+  }
+
+  String _getFolderImage(String folderName) {
+    return 'assets/${folderName.toLowerCase()}.png';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Card Organizer App'),
+        backgroundColor: Colors.blueGrey,
+      ),
+      body: FutureBuilder<List<Folder>>(
+        future: _foldersFuture,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (snapshot.hasError) {
+            return Center(child: Text('Error: ${snapshot.error}'));
+          }
+          if (!snapshot.hasData || snapshot.data!.isEmpty) {
+            return const Center(child: Text('No folders found. Please check database setup.'));
+          }
+          
+          final folders = snapshot.data!;
+          
+          return GridView.builder(
+            padding: const EdgeInsets.all(12.0),
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 2, 
+              crossAxisSpacing: 12.0,
+              mainAxisSpacing: 12.0,
+              childAspectRatio: 1.2,
+            ),
+            itemCount: folders.length,
+            itemBuilder: (context, index) {
+              final folder = folders[index];
+              final isWarning = folder.cardCount < 3; 
+              
+              return InkWell(
+                onTap: () async {
+                  await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => CardsScreen(folder: folder),
+                    ),
+                  );
+                  _loadFolders(); 
+                },
+                child: Card(
+                  elevation: 5,
+                  child: Padding(
+                    padding: const EdgeInsets.all(8.0),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          folder.name,
+                          style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                        ),
+                        const SizedBox(height: 8),
+                        Image.asset(
+                          _getFolderImage(folder.name),
+                          width: 50,
+                          height: 50,
+                          errorBuilder: (context, error, stackTrace) => const Icon(Icons.folder_open, size: 50, color: Colors.blueGrey),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Cards: ${folder.cardCount} / 6',
+                          style: TextStyle(
+                            fontSize: 16,
+                            color: isWarning ? Colors.red.shade700 : Colors.green.shade700,
+                          ),
+                        ),
+                        if (isWarning) 
+                          const Text(
+                            'You need at least 3 cards in this folder.',
+                            style: TextStyle(color: Colors.red, fontSize: 12, fontWeight: FontWeight.w600),
+                            textAlign: TextAlign.center,
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+}
