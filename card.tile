@@ -1,0 +1,57 @@
+import 'package:flutter/material.dart';
+import '../models/card_model.dart';
+
+class CardTile extends StatelessWidget {
+  final CardModel card;
+  final VoidCallback onDelete; 
+  const CardTile({
+    super.key,
+    required this.card,
+    required this.onDelete,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      elevation: 4,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8.0)),
+      child: GridTile(
+        header: Container(
+          decoration: const BoxDecoration(
+            color: Colors.black54,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(8.0)),
+          ),
+          padding: const EdgeInsets.symmetric(vertical: 4.0, horizontal: 8.0),
+          child: Text(
+            card.name,
+            style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+            textAlign: TextAlign.center,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+        footer: GridTileBar(
+          backgroundColor: Colors.black54,
+          trailing: IconButton(
+            icon: const Icon(Icons.delete_forever, color: Colors.redAccent),
+            onPressed: onDelete, 
+          ),
+          title: Text(
+            card.suit,
+            style: const TextStyle(fontSize: 10, color: Colors.white70),
+          ),
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(8.0),
+          child: Image.asset( 
+            card.imageUrl, 
+            fit: BoxFit.cover,
+            errorBuilder: (context, error, stackTrace) => const Center(
+              child: Icon(Icons.image_not_supported, size: 40, color: Colors.grey),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
