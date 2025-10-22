@@ -1,0 +1,175 @@
+import 'package:sqflite/sqflite.dart';
+import 'package:path/path.dart';
+import '../models/card_model.dart';
+import '../models/folder_model.dart';
+
+class DatabaseHelper {
+  static final DatabaseHelper instance = DatabaseHelper._privateConstructor();
+  static Database? _database;
+
+  DatabaseHelper._privateConstructor();
+
+  Future<Database> get database async {
+    if (_database != null) return _database!;
+    _database = await _initDB();
+    return _database!;
+  }
+
+  Future<Database> _initDB() async {
+    String path = join(await getDatabasesPath(), 'card_organizer.db');
+    return await openDatabase(
+      path,
+      version: 2, 
+      onCreate: _createTables,
+      onConfigure: (db) async => await db.execute("PRAGMA foreign_keys = ON"),
+    );
+  }
+
+  Future _createTables(Database db, int version) async {
+    await db.execute('''
+      CREATE TABLE folders (
+        id INTEGER PRIMARY KEY,
+        name TEXT NOT NULL,
+        timestamp TEXT
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE cards (
+        id INTEGER PRIMARY KEY,
+        name TEXT NOT NULL,
+        suit TEXT NOT NULL,
+        imageUrl TEXT,
+        folderId INTEGER,
+        FOREIGN KEY (folderId) REFERENCES folders (id) ON DELETE SET NULL 
+      )
+    ''');
+    
+    await _prepopulateData(db); 
+  }
+
+  Future _prepopulateData(Database db) async {
+    final List<String> folderNames = ['Hearts', 'Spades', 'Diamonds', 'Clubs'];
+    
+    for (var name in folderNames) {
+      await db.insert('folders', Folder(name: name).toMap());
+    }
+
+    final Map<String, String> rankMap = {
+      'Ace': 'ace', 
+      'Two': 'two', 
+      'Three': 'three', 
+      'Four': 'four', 
+      'Five': 'five'
+    };
+
+    final Map<String, String> suitToFileMap = {
+      'Hearts': 'hearts', 
+      'Spades': 'spades', 
+      'Diamonds': 'diamonds', 
+      'Clubs': 'clubs'
+    };
+
+    for (var suit in folderNames) {
+      String fileSuit = suitToFileMap[suit]!;
+      
+      rankMap.forEach((displayName, fileName) async {
+        String name = '$displayName of $suit';
+        
+        String imageUrl = 'assets/${fileName}_${fileSuit}.png'; 
+
+        await db.insert('cards', CardModel(
+          name: name,
+          suit: suit,
+          imageUrl: imageUrl, 
+          folderId: null, 
+        ).toMap());
+      });
+    }
+  }
+
+  
+  Future<List<Folder>> getFoldersWithCount() async {
+    final db = await database;
+    final List<Map<String, dynamic>> maps = await db.rawQuery('''
+      SELECT 
+        f.id, f.name, f.timestamp, COUNT(c.id) as cardCount 
+      FROM folders f
+      LEFT JOIN cards c ON f.id = c.folderId
+      GROUP BY f.id
+      ORDER BY f.id
+    ''');
+    
+    return List.generate(maps.length, (i) {
+      Folder folder = Folder.fromMap(maps[i]);
+      folder.cardCount = maps[i]['cardCount'] as int;
+      return folder;
+    });
+  }
+
+  Future<List<CardModel>> getCardsInFolder(int folderId) async {
+    final db = await database;
+    final List<Map<String, dynamic>> maps = await db.query(
+      'cards',
+      where: 'folderId = ?',
+      whereArgs: [folderId],
+    );
+    return List.generate(maps.length, (i) => CardModel.fromMap(maps[i]));
+  }
+
+  Future<List<CardModel>> getUnassignedCards() async {
+    final db = await database;
+    final List<Map<String, dynamic>> maps = await db.query(
+      'cards',
+      where: 'folderId IS NULL',
+    );
+    return List.generate(maps.length, (i) => CardModel.fromMap(maps[i]));
+  }
+  
+  
+  Future<int> _getCardCountInFolder(int folderId) async {
+    final db = await database;
+    final List<Map<String, dynamic>> result = await db.rawQuery(
+      'SELECT COUNT(*) as count FROM cards WHERE folderId = ?',
+      [folderId],
+    );
+    return result.first['count'] as int;
+  }
+  
+  Future<String?> tryAssignCardToFolder(int cardId, int folderId) async {
+    final count = await _getCardCountInFolder(folderId);
+    
+    if (count >= 6) {
+      return "This folder can only hold 6 cards.";
+    }
+    
+    final db = await database;
+    await db.update(
+      'cards',
+      {'folderId': folderId},
+      where: 'id = ?',
+      whereArgs: [cardId],
+    );
+    
+    return null; 
+  }
+
+  Future<String?> updateCardDetails(CardModel card) async {
+    final db = await database;
+    await db.update(
+      'cards',
+      card.toMap(),
+      where: 'id = ?',
+      whereArgs: [card.id],
+    );
+    return null;
+  }
+
+  Future<void> deleteCard(int cardId) async {
+    final db = await database;
+    await db.delete(
+      'cards',
+      where: 'id = ?',
+      whereArgs: [cardId],
+    );
+  }
+}
