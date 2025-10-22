@@ -1,0 +1,195 @@
+import 'package:flutter/material.dart';
+import '../models/folder_model.dart';
+import '../models/card_model.dart';
+import '../database/db_helper.dart';
+
+class CardsScreen extends StatefulWidget {
+  final Folder folder;
+
+  const CardsScreen({super.key, required this.folder});
+
+  @override
+  State<CardsScreen> createState() => _CardsScreenState();
+}
+
+class _CardsScreenState extends State<CardsScreen> {
+  late Future<List<CardModel>> _cardsFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadCards();
+  }
+
+  void _loadCards() {
+    setState(() {
+      _cardsFuture = DatabaseHelper.instance.getCardsInFolder(widget.folder.id!);
+    });
+  }
+
+
+  Future<void> _deleteCard(int cardId) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Confirm Deletion'),
+        content: const Text('Are you sure you want to remove this card?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Delete', style: TextStyle(color: Colors.red))),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      await DatabaseHelper.instance.deleteCard(cardId);
+      _loadCards();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Card permanently deleted.')),
+      );
+    }
+  }
+
+  Future<void> _assignCard(CardModel cardToAssign) async {
+    final folderId = widget.folder.id!;
+    
+    String? error = await DatabaseHelper.instance.tryAssignCardToFolder(
+      cardToAssign.id!,
+      folderId,
+    );
+
+    if (error != null) {
+      if (!mounted) return;
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Limit Reached!'),
+          content: Text(error), 
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+    } else {
+      _loadCards();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${cardToAssign.name} added to ${widget.folder.name}.')),
+      );
+      Navigator.pop(context); 
+    }
+  }
+
+  Future<void> _showAddCardDialog() async {
+    final unassignedCards = await DatabaseHelper.instance.getUnassignedCards();
+
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Select Card to Add'),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: unassignedCards.isEmpty 
+              ? const Center(child: Text("No unassigned cards in the deck."))
+              : ListView.builder(
+              shrinkWrap: true,
+              itemCount: unassignedCards.length,
+              itemBuilder: (context, index) {
+                final card = unassignedCards[index];
+                return ListTile(
+                  leading: Image.asset(card.imageUrl, width: 40, height: 40, fit: BoxFit.cover),
+                  title: Text(card.name),
+                  onTap: () => _assignCard(card),
+                );
+              },
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('${widget.folder.name} Folder'),
+      ),
+      body: FutureBuilder<List<CardModel>>(
+        future: _cardsFuture,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (snapshot.hasError) {
+            return Center(child: Text('Error loading cards: ${snapshot.error}'));
+          }
+          if (!snapshot.hasData || snapshot.data!.isEmpty) {
+            return const Center(child: Text('This folder is empty. Add a card from the deck!'));
+          }
+          
+          final cards = snapshot.data!;
+          
+          return GridView.builder(
+            padding: const EdgeInsets.all(8.0),
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 3, 
+              crossAxisSpacing: 8.0,
+              mainAxisSpacing: 8.0,
+              childAspectRatio: 0.7, 
+            ),
+            itemCount: cards.length,
+            itemBuilder: (context, index) {
+              final card = cards[index];
+              return Card(
+                elevation: 4,
+                child: GridTile(
+                  header: Container(
+                    padding: const EdgeInsets.all(4.0),
+                    color: Colors.black54,
+                    child: Text(
+                      card.name,
+                      style: const TextStyle(color: Colors.white, fontSize: 10),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                  footer: GridTileBar(
+                    backgroundColor: Colors.black54,
+                    trailing: IconButton(
+                      icon: const Icon(Icons.delete, color: Colors.redAccent),
+                      onPressed: () => _deleteCard(card.id!),
+                    ),
+                  ),
+                  child: Image.asset( 
+                    card.imageUrl, 
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, error, stackTrace) => const Center(
+                      child: Icon(Icons.broken_image, size: 40, color: Colors.grey),
+                    ),
+                  ),
+                ),
+              );
+            },
+          );
+        },
+      ),
+      
+      floatingActionButton: FloatingActionButton(
+        onPressed: _showAddCardDialog,
+        child: const Icon(Icons.add),
+      ),
+    );
+  }
+}
